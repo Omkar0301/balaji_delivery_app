@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Balaji Fresh",
+    "slug": "balaji-fresh",
+    "scheme": "balajifresh",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.balaji.fresh"
+    },
+    "android": {
+      "package": "com.balaji.fresh",
+      "adaptiveIcon": {
+        "backgroundColor": "#F8FAF5",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#F8FAF5",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#F8FAF5"
+          }
+        }
+      ],
+      "expo-font"
+    ]
+  }
+}

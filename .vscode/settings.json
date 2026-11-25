@@ -1,0 +1,19 @@
+{
+  "java.import.gradle.java.home": "C:\\Program Files\\Java\\jdk-17",
+  "java.autobuild.enabled": false,
+  "java.import.gradle.enabled": false,
+  "java.configuration.updateBuildConfiguration": "disabled",
+  "java.import.exclusions": [
+    "**/node_modules/**",
+    "**/.metadata/**",
+    "**/archetype-resources/**",
+    "**/META-INF/maven/**",
+    "**/android/**"
+  ],
+  "files.watcherExclude": {
+    "**/android/**": true,
+    "**/build/**": true,
+    "**/.gradle/**": true,
+    "**/node_modules/**": true
+  }
+}
