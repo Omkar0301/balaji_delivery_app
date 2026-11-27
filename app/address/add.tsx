@@ -14,6 +14,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuthContext } from '../../src/context/AuthContext';
 import { useToast } from '../../src/context/ToastContext';
+import { formatPhoneNumber, validateIndianPhone } from '../../src/utils/validation';
 import { Colors } from '../../src/theme/colors';
 import { Typography } from '../../src/theme/typography';
 import { Spacing } from '../../src/theme/spacing';
@@ -24,8 +25,12 @@ export default function AddAddressScreen() {
   const insets = useSafeAreaInsets();
   const { addAddress, user } = useAuthContext();
   const { showSuccess, showError } = useToast();
-  const [recipientName, setRecipientName] = useState(user?.fullName || '');
-  const [phone, setPhone] = useState(user?.phone || '');
+  const [recipientName, setRecipientName] = useState(
+    user?.fullName && user.fullName !== 'Guest User' ? user.fullName : ''
+  );
+  const [phone, setPhone] = useState(
+    user?.phone && !user.phone.startsWith('guest_') ? formatPhoneNumber(user.phone) : ''
+  );
   const [flatNumber, setFlatNumber] = useState('');
   const [buildingName, setBuildingName] = useState('');
   const [street, setStreet] = useState('');
@@ -34,31 +39,80 @@ export default function AddAddressScreen() {
   const [city, setCity] = useState('Surat');
   const [tag, setTag] = useState<'HOME' | 'WORK' | 'PARENTS' | 'OTHER'>('HOME');
   const [isDefault, setIsDefault] = useState(true);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const handleSave = () => {
-    if (!flatNumber.trim() || !buildingName.trim()) {
-      showError('Please enter flat/house number and society name');
+  const [saving, setSaving] = useState(false);
+
+  const clearFieldError = (field: string) => {
+    setFieldErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const validateForm = (): Record<string, string> => {
+    const errs: Record<string, string> = {};
+    if (!flatNumber.trim()) errs.flatNumber = 'Flat / house number is required';
+    if (!buildingName.trim()) errs.buildingName = 'Society / apartment name is required';
+    if (!/^\d{6}$/.test(pincode.trim())) errs.pincode = 'Pincode must be a 6-digit number';
+    if (city.trim().length < 2) errs.city = 'City must be at least 2 characters';
+    if (recipientName.trim().length < 2) {
+      errs.recipientName = 'Recipient name must be at least 2 characters';
+    }
+    if (!validateIndianPhone(phone)) {
+      errs.recipientPhone = 'Please enter a valid 10-digit Indian mobile number';
+    }
+    return errs;
+  };
+
+  const handleSave = async () => {
+    const errs = validateForm();
+    if (Object.keys(errs).length > 0) {
+      setFieldErrors(errs);
+      const firstError = Object.values(errs)[0];
+      if (firstError) showError(firstError);
       return;
     }
 
-    addAddress({
-      recipientName: recipientName || 'Valued Customer',
-      recipientPhone: phone || '9876543210',
-      flatNumber,
-      buildingName,
-      street: street || 'Adajan Canal Road',
-      landmark,
-      pincode,
-      city,
-      tag,
-      isDefault,
-    });
+    setFieldErrors({});
+    setSaving(true);
+    try {
+      await addAddress({
+        recipientName: recipientName.trim(),
+        recipientPhone: phone.replace(/\D/g, ''),
+        flatNumber: flatNumber.trim(),
+        buildingName: buildingName.trim(),
+        street: street.trim() || 'Adajan Canal Road',
+        landmark: landmark.trim() || undefined,
+        pincode: pincode.trim(),
+        city: city.trim(),
+        tag,
+        isDefault,
+      });
 
-    showSuccess('Morning delivery address saved successfully');
-    router.back();
+      showSuccess('Morning delivery address saved successfully');
+      router.back();
+    } catch (err: unknown) {
+      const apiErr = err as {
+        message?: string;
+        details?: { body?: Record<string, string[]> };
+      };
+      if (apiErr?.details?.body) {
+        const mapped: Record<string, string> = {};
+        for (const [key, msgs] of Object.entries(apiErr.details.body)) {
+          if (Array.isArray(msgs) && msgs[0]) mapped[key] = msgs[0];
+        }
+        if (Object.keys(mapped).length > 0) setFieldErrors(mapped);
+      }
+      showError(apiErr?.message || 'Failed to save delivery address');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const isFormValid = flatNumber.trim().length > 0 && buildingName.trim().length > 0;
+  const isFormValid = !saving && flatNumber.trim().length > 0 && buildingName.trim().length > 0;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -111,21 +165,37 @@ export default function AddAddressScreen() {
           <View style={styles.card}>
             <Text style={styles.label}>FLAT / HOUSE NO. / WING</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, fieldErrors.flatNumber && { borderColor: Colors.error }]}
               placeholder="e.g. Flat B-402, 4th Floor"
               placeholderTextColor={Colors.textMuted}
               value={flatNumber}
-              onChangeText={setFlatNumber}
+              onChangeText={(t) => {
+                setFlatNumber(t);
+                clearFieldError('flatNumber');
+              }}
             />
+            {fieldErrors.flatNumber && (
+              <Text style={{ color: Colors.error, fontSize: 12, marginTop: -8, marginBottom: 8 }}>
+                {fieldErrors.flatNumber}
+              </Text>
+            )}
 
             <Text style={styles.label}>SOCIETY / APARTMENT NAME</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, fieldErrors.buildingName && { borderColor: Colors.error }]}
               placeholder="e.g. Shivalik Greens Apartment"
               placeholderTextColor={Colors.textMuted}
               value={buildingName}
-              onChangeText={setBuildingName}
+              onChangeText={(t) => {
+                setBuildingName(t);
+                clearFieldError('buildingName');
+              }}
             />
+            {fieldErrors.buildingName && (
+              <Text style={{ color: Colors.error, fontSize: 12, marginTop: -8, marginBottom: 8 }}>
+                {fieldErrors.buildingName}
+              </Text>
+            )}
 
             <Text style={styles.label}>STREET / ROAD / AREA</Text>
             <TextInput
@@ -149,23 +219,40 @@ export default function AddAddressScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.label}>PINCODE</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, fieldErrors.pincode && { borderColor: Colors.error }]}
                   placeholder="395009"
                   placeholderTextColor={Colors.textMuted}
                   value={pincode}
-                  onChangeText={setPincode}
+                  maxLength={6}
+                  onChangeText={(t) => {
+                    setPincode(t.replace(/\D/g, '').slice(0, 6));
+                    clearFieldError('pincode');
+                  }}
                   keyboardType="numeric"
                 />
+                {fieldErrors.pincode && (
+                  <Text style={{ color: Colors.error, fontSize: 12, marginTop: -8, marginBottom: 8 }}>
+                    {fieldErrors.pincode}
+                  </Text>
+                )}
               </View>
               <View style={{ flex: 1, marginLeft: 12 }}>
                 <Text style={styles.label}>CITY</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, fieldErrors.city && { borderColor: Colors.error }]}
                   placeholder="Surat"
                   placeholderTextColor={Colors.textMuted}
                   value={city}
-                  onChangeText={setCity}
+                  onChangeText={(t) => {
+                    setCity(t);
+                    clearFieldError('city');
+                  }}
                 />
+                {fieldErrors.city && (
+                  <Text style={{ color: Colors.error, fontSize: 12, marginTop: -8, marginBottom: 8 }}>
+                    {fieldErrors.city}
+                  </Text>
+                )}
               </View>
             </View>
           </View>
@@ -176,22 +263,39 @@ export default function AddAddressScreen() {
 
             <Text style={styles.label}>CONTACT PERSON NAME</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, fieldErrors.recipientName && { borderColor: Colors.error }]}
               placeholder="e.g. Rajesh Patel"
               placeholderTextColor={Colors.textMuted}
               value={recipientName}
-              onChangeText={setRecipientName}
+              onChangeText={(t) => {
+                setRecipientName(t);
+                clearFieldError('recipientName');
+              }}
             />
+            {fieldErrors.recipientName && (
+              <Text style={{ color: Colors.error, fontSize: 12, marginTop: -8, marginBottom: 8 }}>
+                {fieldErrors.recipientName}
+              </Text>
+            )}
 
             <Text style={styles.label}>PHONE NUMBER FOR MORNING CALL</Text>
             <TextInput
-              style={styles.input}
-              placeholder="e.g. 9876543210"
+              style={[styles.input, fieldErrors.recipientPhone && { borderColor: Colors.error }]}
+              placeholder="e.g. 98765 43210"
               placeholderTextColor={Colors.textMuted}
               value={phone}
-              onChangeText={setPhone}
+              maxLength={11}
+              onChangeText={(t) => {
+                setPhone(formatPhoneNumber(t));
+                clearFieldError('recipientPhone');
+              }}
               keyboardType="phone-pad"
             />
+            {fieldErrors.recipientPhone && (
+              <Text style={{ color: Colors.error, fontSize: 12, marginTop: -8, marginBottom: 4 }}>
+                {fieldErrors.recipientPhone}
+              </Text>
+            )}
           </View>
 
           {/* Set as Default Checkbox */}

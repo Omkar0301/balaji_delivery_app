@@ -1,13 +1,16 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, Pressable, ScrollView } from 'react-native';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { View, Text, StyleSheet, FlatList, Pressable, ScrollView, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { ProductCard } from '../src/components/common/ProductCard';
 import { EmptyState } from '../src/components/common/EmptyState';
+import { ErrorState } from '../src/components/common/ErrorState';
+import { LoadingState } from '../src/components/common/LoadingState';
 import { FloatingCartBar } from '../src/components/common/FloatingCartBar';
 import { useToast } from '../src/context/ToastContext';
-import { MOCK_CATEGORIES, MOCK_PRODUCTS } from '../src/data/mockData';
+import { productService } from '../src/services/productService';
+import { Category, Product } from '../src/types/product';
 import { Colors } from '../src/theme/colors';
 import { Typography } from '../src/theme/typography';
 import { Spacing } from '../src/theme/spacing';
@@ -21,15 +24,90 @@ export default function CatalogScreen() {
   const [selectedSubCatId, setSelectedSubCatId] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'default' | 'price_asc' | 'price_desc'>('default');
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const { showSuccess } = useToast();
 
-  const onRefresh = useCallback(() => {
+  const fetchCatalogData = useCallback(async () => {
+    const [catRes, prodRes] = await Promise.all([
+      productService.getCategories(),
+      productService.getProducts({
+        categoryId: selectedCatId !== 'all' ? selectedCatId : undefined,
+        subCategoryId: selectedSubCatId !== 'all' ? selectedSubCatId : undefined,
+        sortBy,
+        limit: 50,
+      }),
+    ]);
+    setCategories(catRes.data);
+    setProducts(prodRes.data);
+  }, [selectedCatId, selectedSubCatId, sortBy]);
+
+  useEffect(() => {
+    let mounted = true;
+    productService
+      .getCategories()
+      .then((catRes) => {
+        if (mounted) setCategories(catRes.data);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    productService
+      .getProducts({
+        categoryId: selectedCatId !== 'all' ? selectedCatId : undefined,
+        subCategoryId: selectedSubCatId !== 'all' ? selectedSubCatId : undefined,
+        sortBy,
+        limit: 50,
+      })
+      .then((prodRes) => {
+        if (mounted) {
+          setProducts(prodRes.data);
+          setError(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (mounted) {
+          const apiErr = err as { message?: string };
+          setError(apiErr?.message || 'Unable to load catalog');
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [selectedCatId, selectedSubCatId, sortBy]);
+
+  const handleRetry = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await fetchCatalogData();
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      setError(apiErr?.message || 'Unable to load catalog');
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchCatalogData]);
+
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
+    try {
+      await fetchCatalogData();
       showSuccess('Catalog & morning stock updated');
-    }, 600);
-  }, [showSuccess]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchCatalogData, showSuccess]);
 
   if (params.categoryId !== prevParamCatId) {
     setPrevParamCatId(params.categoryId);
@@ -38,35 +116,26 @@ export default function CatalogScreen() {
   }
 
   const activeCategory = useMemo(
-    () => MOCK_CATEGORIES.find((c) => c.id === selectedCatId),
-    [selectedCatId]
+    () => categories.find((c) => c.id === selectedCatId),
+    [categories, selectedCatId]
   );
 
   const vegetableSubcategories = useMemo(
-    () => MOCK_CATEGORIES.find((c) => c.id === 'cat-vegetables')?.subcategories || [],
-    []
+    () =>
+      categories.find((c) => c.slug === 'vegetables' || c.id === 'cat-vegetables')
+        ?.subcategories || [],
+    [categories]
   );
 
-  const filteredProducts = useMemo(() => {
-    let result = [...MOCK_PRODUCTS];
-
-    if (selectedCatId !== 'all') {
-      result = result.filter((p) => p.categoryId === selectedCatId);
-      if (selectedCatId === 'cat-vegetables' && selectedSubCatId !== 'all') {
-        result = result.filter((p) => p.subCategoryId === selectedSubCatId);
-      }
-    }
-
-    if (sortBy === 'price_asc') {
-      result.sort((a, b) => a.basePrice - b.basePrice);
-    } else if (sortBy === 'price_desc') {
-      result.sort((a, b) => b.basePrice - a.basePrice);
-    }
-
-    return result;
-  }, [selectedCatId, selectedSubCatId, sortBy]);
+  const filteredProducts = products;
+  const totalCategoryProducts = useMemo(
+    () => categories.reduce((sum, c) => sum + (c.itemCount ?? 0), 0),
+    [categories]
+  );
 
   const handleCategorySelect = (catId: string) => {
+    setLoading(true);
+    setError(null);
     setSelectedCatId(catId);
     setSelectedSubCatId('all');
   };
@@ -118,11 +187,11 @@ export default function CatalogScreen() {
             style={[styles.pill, selectedCatId === 'all' && styles.pillActive]}
           >
             <Text style={[styles.pillText, selectedCatId === 'all' && styles.pillTextActive]}>
-              All ({MOCK_PRODUCTS.length})
+              All ({totalCategoryProducts || filteredProducts.length})
             </Text>
           </Pressable>
 
-          {MOCK_CATEGORIES.map((cat) => (
+          {categories.map((cat) => (
             <Pressable
               key={cat.id}
               onPress={() => handleCategorySelect(cat.id)}
@@ -137,7 +206,8 @@ export default function CatalogScreen() {
       </View>
 
       {/* Secondary Subcategory Pills (when Vegetables is active) */}
-      {selectedCatId === 'cat-vegetables' && vegetableSubcategories.length > 0 && (
+      {(activeCategory?.slug === 'vegetables' || selectedCatId === 'cat-vegetables') &&
+        vegetableSubcategories.length > 0 && (
         <View style={styles.subPillsContainer}>
           <ScrollView
             horizontal
@@ -206,26 +276,36 @@ export default function CatalogScreen() {
       </View>
 
       {/* Product List */}
-      <FlatList
-        data={filteredProducts}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={[styles.listContent, { paddingBottom: 110 + insets.bottom }]}
-        showsVerticalScrollIndicator={false}
-        refreshing={refreshing}
-        onRefresh={onRefresh}
-        renderItem={({ item }) => <ProductCard product={item} />}
-        ListEmptyComponent={
-          <EmptyState
-            title="No products in this category"
-            description="Please choose another category or browse all items."
-            actionLabel="Show All Items"
-            onAction={() => handleCategorySelect('all')}
-          />
-        }
-      />
+      {loading && products.length === 0 ? (
+        <LoadingState message="Loading fresh produce..." />
+      ) : error && products.length === 0 ? (
+        <ErrorState message={error} onRetry={() => void handleRetry()} />
+      ) : (
+        <FlatList
+          data={filteredProducts}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={[styles.listContent, { paddingBottom: 110 + insets.bottom }]}
+          showsVerticalScrollIndicator={false}
+          initialNumToRender={8}
+          maxToRenderPerBatch={6}
+          windowSize={5}
+          removeClippedSubviews={Platform.OS === 'android'}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          renderItem={({ item }) => <ProductCard product={item} />}
+          ListEmptyComponent={
+            <EmptyState
+              title="No products in this category"
+              description="Please choose another category or browse all items."
+              actionLabel="Show All Items"
+              onAction={() => handleCategorySelect('all')}
+            />
+          }
+        />
+      )}
 
       {/* Floating Bottom Cart Bar */}
-      <FloatingCartBar bottomOffset={12} />
+      {(!loading || products.length > 0) && <FloatingCartBar bottomOffset={12} />}
     </SafeAreaView>
   );
 }

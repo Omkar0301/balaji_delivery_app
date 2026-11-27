@@ -20,21 +20,37 @@ import { PressableScale } from '../../src/components/common/PressableScale';
 import { LottieAssets } from '../../src/assets/lottie';
 
 export default function CartScreen() {
-  const { items, totalItemCount, bill, updateQuantity, clearCart } =
+  const { items, totalItemCount, bill, updateQuantity, clearCart, refreshCart } =
     useCartContext();
-  const { user } = useAuthContext();
+  const { user, isLoggedIn } = useAuthContext();
   const { showSuccess, showInfo } = useToast();
   const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
   const defaultAddress = user?.savedAddresses.find((a) => a.isDefault) || user?.savedAddresses[0];
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
+    try {
+      await refreshCart();
       showSuccess('Morning cart pricing synchronized');
-    }, 600);
-  }, [showSuccess]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshCart, showSuccess]);
+
+  const handleProceedToPay = () => {
+    if (!isLoggedIn) {
+      showInfo('Please sign in to place your morning order');
+      router.push('/(auth)/login');
+      return;
+    }
+    if (!defaultAddress) {
+      showInfo('Please add a delivery address first');
+      router.push('/address/add');
+      return;
+    }
+    router.push('/checkout/payment');
+  };
 
   const handleClearCart = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -162,7 +178,7 @@ export default function CartScreen() {
           <Text style={styles.footerTotal}>{formatCurrency(bill.totalPayable)}</Text>
         </View>
         <PressableScale
-          onPress={() => router.push('/checkout/payment')}
+          onPress={handleProceedToPay}
           activeScale={0.98}
           style={styles.checkoutButton}
         >

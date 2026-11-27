@@ -1,10 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Animated } from 'react-native';
-import { router } from 'expo-router';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, Animated, Linking, Platform } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { MOCK_LIVE_ORDER, MOCK_USER } from '../../../src/data/mockData';
+import { Paths, File as ExpoFile, Directory } from 'expo-file-system';
+import { apiClient } from '../../../src/services/apiClient';
+import { orderService, InvoicePayload } from '../../../src/services/orderService';
 import { useToast } from '../../../src/context/ToastContext';
+import { ErrorState } from '../../../src/components/common/ErrorState';
+import { LoadingState } from '../../../src/components/common/LoadingState';
 import { Colors } from '../../../src/theme/colors';
 import { Typography } from '../../../src/theme/typography';
 import { Spacing } from '../../../src/theme/spacing';
@@ -14,14 +18,58 @@ import { formatCurrency } from '../../../src/utils/formatters';
 import { PressableScale } from '../../../src/components/common/PressableScale';
 
 export default function OrderInvoiceScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
-  const order = MOCK_LIVE_ORDER;
-  const { showSuccess } = useToast();
+  const [invoice, setInvoice] = useState<InvoicePayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { showSuccess, showError } = useToast();
 
   const [stampScale] = useState(() => new Animated.Value(0.4));
   const [stampOpacity] = useState(() => new Animated.Value(0));
 
+  const loadInvoice = useCallback(async () => {
+    if (!id) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await orderService.getInvoice(id);
+      setInvoice(res.data);
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      setError(apiErr?.message || 'Unable to load tax invoice');
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
   useEffect(() => {
+    if (!id) return;
+    let mounted = true;
+    orderService
+      .getInvoice(id)
+      .then((res) => {
+        if (mounted) {
+          setInvoice(res.data);
+          setError(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (mounted) {
+          const apiErr = err as { message?: string };
+          setError(apiErr?.message || 'Unable to load tax invoice');
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [id]);
+
+  useEffect(() => {
+    if (!invoice) return;
     Animated.parallel([
       Animated.spring(stampScale, {
         toValue: 1,
@@ -33,7 +81,80 @@ export default function OrderInvoiceScreen() {
         useNativeDriver: true,
       }),
     ]).start();
-  }, [stampScale, stampOpacity]);
+  }, [invoice, stampScale, stampOpacity]);
+
+  const handleDownloadPdf = async () => {
+    if (!id || !invoice) return;
+    const pdfUrl = orderService.getInvoicePdfUrl(id);
+    const safeFileName = `${invoice.invoiceNumber.replace(/[^a-zA-Z0-9_-]/g, '')}.pdf`;
+    try {
+      if (Platform.OS === 'web') {
+        await Linking.openURL(pdfUrl);
+        return;
+      }
+      const token = apiClient.getAuthToken();
+      const targetDir = Platform.OS === 'android' ? Paths.cache : Paths.document;
+      const targetFile = new ExpoFile(targetDir, safeFileName);
+      const downloaded = await ExpoFile.downloadFileAsync(pdfUrl, targetFile, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        idempotent: true,
+      });
+
+      if (Platform.OS === 'android') {
+        const pickedDir = await Directory.pickDirectoryAsync();
+        const destFile = pickedDir.createFile(safeFileName, 'application/pdf');
+        destFile.write(await downloaded.bytes());
+        showSuccess(`Saved ${safeFileName} to selected folder`);
+      } else {
+        showSuccess(`Saved ${safeFileName} to device storage`);
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '';
+      if (message.toLowerCase().includes('cancel')) {
+        return;
+      }
+      showError('Could not download invoice PDF');
+    }
+  };
+
+  if (loading || !invoice) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.header}>
+          <PressableScale
+            onPress={() => router.back()}
+            activeScale={0.92}
+            style={styles.backButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <MaterialIcons name="arrow-back" size={20} color={Colors.primary} />
+              <Text style={styles.backButtonText}>Back</Text>
+            </View>
+          </PressableScale>
+          <Text style={styles.headerTitle}>Vendor Tax Invoice</Text>
+          <View style={{ width: 52 }} />
+        </View>
+        {error ? (
+          <ErrorState message={error} onRetry={() => void loadInvoice()} />
+        ) : (
+          <LoadingState message="Loading tax invoice..." />
+        )}
+      </SafeAreaView>
+    );
+  }
+
+  const customerAddress = invoice.customer?.address ?? invoice.order?.address;
+  const addressParts = [
+    customerAddress?.flatNumber,
+    customerAddress?.buildingName,
+    customerAddress?.street,
+    customerAddress?.city,
+  ].filter(Boolean);
+  const itemTotal = invoice.order?.itemTotal ?? invoice.order?.bill?.itemTotal ?? 0;
+  const packingFee = invoice.order?.packingFee ?? invoice.order?.bill?.packingFee ?? 0;
+  const deliveryFee = invoice.order?.deliveryFee ?? invoice.order?.bill?.deliveryFee ?? 0;
+  const totalAmount = invoice.order?.totalAmount ?? invoice.order?.bill?.totalPayable ?? 0;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -51,10 +172,7 @@ export default function OrderInvoiceScreen() {
           </View>
         </PressableScale>
         <Text style={styles.headerTitle}>Vendor Tax Invoice</Text>
-        <PressableScale
-          onPress={() => showSuccess('Tax invoice saved to device storage')}
-          activeScale={0.92}
-        >
+        <PressableScale onPress={() => void handleDownloadPdf()} activeScale={0.92}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <MaterialIcons name="file-download" size={18} color={Colors.primary} />
             <Text style={styles.downloadText}>Save</Text>
@@ -67,9 +185,15 @@ export default function OrderInvoiceScreen() {
         <View style={styles.receiptCard}>
           {/* Header & Vendor Registration */}
           <View style={styles.taxHeader}>
-            <Text style={styles.companyTitle}>BALAJI ENTERPRISE FRESH PRODUCE</Text>
-            <Text style={styles.taxSub}>Balaji Enterprise Wholesale Fulfillment Hub, Surat 395009</Text>
-            <Text style={styles.taxSub}>FSSAI Lic No: 10723026000412 • GSTIN: 24AABCB1234F1Z1</Text>
+            <Text style={styles.companyTitle}>
+              {invoice.vendor?.companyLegalName || 'BALAJI ENTERPRISE FRESH PRODUCE'}
+            </Text>
+            <Text style={styles.taxSub}>
+              {invoice.vendor?.hubAddress || 'Balaji Enterprise Wholesale Fulfillment Hub, Surat 395009'}
+            </Text>
+            <Text style={styles.taxSub}>
+              FSSAI Lic No: {invoice.vendor?.fssaiNumber || '10723026000412'} • GSTIN: {invoice.vendor?.gstin || '24AABCB1234F1Z1'}
+            </Text>
           </View>
 
           <View style={styles.dashedLine} />
@@ -78,21 +202,27 @@ export default function OrderInvoiceScreen() {
           <View style={styles.metaRow}>
             <View>
               <Text style={styles.metaLabel}>INVOICE NO.</Text>
-              <Text style={styles.metaValue}>{order.orderNumber}-INV</Text>
+              <Text style={styles.metaValue}>{invoice.invoiceNumber}</Text>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
-              <Text style={styles.metaLabel}>WEIGHED TIMESTAMP</Text>
-              <Text style={styles.metaValue}>20-Nov-2026 4:42 AM</Text>
+              <Text style={styles.metaLabel}>ISSUED AT</Text>
+              <Text style={styles.metaValue}>
+                {new Date(invoice.weighedTimestamp).toLocaleDateString('en-IN', {
+                  day: '2-digit',
+                  month: 'short',
+                  year: 'numeric',
+                })}
+              </Text>
             </View>
           </View>
 
           <View style={styles.customerBox}>
             <Text style={styles.customerLabel}>BILL TO / CUSTOMER DETAILS</Text>
-            <Text style={styles.customerName}>{MOCK_USER.fullName}</Text>
-            <Text style={styles.customerAddress}>
-              {order.address.flatNumber}, {order.address.buildingName}, {order.address.street}, {order.address.city}
-            </Text>
-            <Text style={styles.customerPhone}>Phone: +91 {MOCK_USER.phone}</Text>
+            <Text style={styles.customerName}>{invoice.customer?.fullName || 'Customer'}</Text>
+            {addressParts.length > 0 && (
+              <Text style={styles.customerAddress}>{addressParts.join(', ')}</Text>
+            )}
+            <Text style={styles.customerPhone}>Phone: {invoice.customer?.phone || ''}</Text>
           </View>
 
           <View style={styles.dashedLine} />
@@ -102,25 +232,25 @@ export default function OrderInvoiceScreen() {
 
           <View style={styles.tableHeaderRow}>
             <Text style={[styles.colHeader, { flex: 2 }]}>Commodity</Text>
-            <Text style={[styles.colHeader, { flex: 1, textAlign: 'center' }]}>Gross Wt</Text>
-            <Text style={[styles.colHeader, { flex: 1, textAlign: 'center' }]}>Rate/kg</Text>
+            <Text style={[styles.colHeader, { flex: 1, textAlign: 'center' }]}>Pack</Text>
+            <Text style={[styles.colHeader, { flex: 1, textAlign: 'center' }]}>Rate</Text>
             <Text style={[styles.colHeader, { flex: 1, textAlign: 'right' }]}>Total</Text>
           </View>
 
-          {order.items.map((item, index) => (
-            <View key={index} style={styles.tableRow}>
+          {(invoice.order?.items ?? []).map((item, index) => (
+            <View key={item.id ?? index} style={styles.tableRow}>
               <View style={{ flex: 2 }}>
-                <Text style={styles.rowTitle}>{item.product.name}</Text>
-                <Text style={styles.rowRegional}>{item.product.regionalName}</Text>
+                <Text style={styles.rowTitle}>{item.product?.name}</Text>
+                <Text style={styles.rowRegional}>Qty: {item.quantity}</Text>
               </View>
               <Text style={[styles.rowVal, { flex: 1, textAlign: 'center' }]}>
-                {item.selectedWeight.label}
+                {item.selectedWeight?.label}
               </Text>
               <Text style={[styles.rowVal, { flex: 1, textAlign: 'center' }]}>
-                ₹{item.product.basePrice}
+                ₹{item.selectedWeight?.price}
               </Text>
               <Text style={[styles.rowVal, { flex: 1, textAlign: 'right', fontWeight: '700' }]}>
-                {formatCurrency(item.selectedWeight.price * item.quantity)}
+                {formatCurrency(item.lineTotal ?? (item.selectedWeight?.price ?? 0) * item.quantity)}
               </Text>
             </View>
           ))}
@@ -130,20 +260,26 @@ export default function OrderInvoiceScreen() {
           {/* Totals Calculation */}
           <View style={styles.calcRow}>
             <Text style={styles.calcLabel}>Commodity Net Total</Text>
-            <Text style={styles.calcVal}>{formatCurrency(order.totalAmount)}</Text>
+            <Text style={styles.calcVal}>{formatCurrency(itemTotal)}</Text>
           </View>
           <View style={styles.calcRow}>
             <Text style={styles.calcLabel}>Perforated Food Pouch Packaging</Text>
-            <Text style={styles.freeGreen}>FREE (₹0)</Text>
+            <Text style={styles.freeGreen}>
+              {packingFee === 0 ? 'FREE (₹0)' : formatCurrency(packingFee)}
+            </Text>
           </View>
           <View style={styles.calcRow}>
             <Text style={styles.calcLabel}>Early Morning Insulated Delivery</Text>
-            <Text style={styles.freeGreen}>FREE (₹0)</Text>
+            <Text style={styles.freeGreen}>
+              {deliveryFee === 0 ? 'FREE (₹0)' : formatCurrency(deliveryFee)}
+            </Text>
           </View>
 
           <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Grand Total (UPI Paid)</Text>
-            <Text style={styles.totalVal}>{formatCurrency(order.totalAmount)}</Text>
+            <Text style={styles.totalLabel}>
+              Grand Total ({invoice.order?.paymentMethod} {invoice.order?.paymentStatus})
+            </Text>
+            <Text style={styles.totalVal}>{formatCurrency(totalAmount)}</Text>
           </View>
 
           <Animated.View

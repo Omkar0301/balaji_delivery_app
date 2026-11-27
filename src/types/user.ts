@@ -17,7 +17,9 @@ export interface UserProfile {
   phone: string;
   fullName: string;
   preferredLanguage: 'en' | 'gu';
-  householdSize: '1-2' | '3-4' | '5+';
+  dealsAlertsEnabled?: boolean;
+  dispatchAlertsEnabled?: boolean;
+  householdSize?: '1-2' | '3-4' | '5+';
   savedAddresses: DeliveryAddress[];
   isVerified: boolean;
 }

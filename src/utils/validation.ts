@@ -11,7 +11,11 @@ export function validateIndianPhone(phone: string): boolean {
  * Format phone number as "98765 43210"
  */
 export function formatPhoneNumber(phone: string): string {
-  const cleaned = phone.replace(/\D/g, '').slice(0, 10);
+  let cleaned = phone.replace(/\D/g, '');
+  if (cleaned.length > 10 && cleaned.startsWith('91')) {
+    cleaned = cleaned.slice(2);
+  }
+  cleaned = cleaned.slice(0, 10);
   if (cleaned.length > 5) {
     return `${cleaned.slice(0, 5)} ${cleaned.slice(5)}`;
   }

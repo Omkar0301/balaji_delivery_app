@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,8 +15,11 @@ import { ProductCard } from '../../src/components/common/ProductCard';
 import { FloatingCartBar } from '../../src/components/common/FloatingCartBar';
 import { HomeSearchBar } from '../../src/components/home/HomeSearchBar';
 import { CategoryCircleRow } from '../../src/components/home/CategoryCircleRow';
+import { ErrorState } from '../../src/components/common/ErrorState';
+import { LoadingState } from '../../src/components/common/LoadingState';
 import { useToast } from '../../src/context/ToastContext';
-import { MOCK_PRODUCTS } from '../../src/data/mockData';
+import { productService } from '../../src/services/productService';
+import { Category, Product } from '../../src/types/product';
 import { Colors } from '../../src/theme/colors';
 import { Typography } from '../../src/theme/typography';
 import { Spacing } from '../../src/theme/spacing';
@@ -25,40 +28,122 @@ import { Shadows } from '../../src/theme/shadows';
 
 export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const { showSuccess } = useToast();
 
-  const onRefresh = useCallback(() => {
+  const fetchHomeData = useCallback(async () => {
+    const [homeRes, productsRes] = await Promise.all([
+      productService.getHome(),
+      productService.getProducts({ limit: 50 }),
+    ]);
+    setCategories(homeRes.data.categories);
+    setProducts(productsRes.data);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([productService.getHome(), productService.getProducts({ limit: 50 })])
+      .then(([homeRes, productsRes]) => {
+        if (mounted) {
+          setCategories(homeRes.data.categories);
+          setProducts(productsRes.data);
+          setError(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (mounted) {
+          const apiErr = err as { message?: string };
+          setError(apiErr?.message || 'Unable to load catalog. Check your connection.');
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const handleRetry = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await fetchHomeData();
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      setError(apiErr?.message || 'Unable to load catalog. Check your connection.');
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchHomeData]);
+
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
+    try {
+      await fetchHomeData();
       showSuccess('Morning harvest catalog updated');
-    }, 600);
-  }, [showSuccess]);
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      setError(apiErr?.message || 'Unable to load catalog. Check your connection.');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchHomeData, showSuccess]);
 
   // Multi-Category Shelves:
   // 1. Fresh Vegetables
   const freshVegetables = useMemo(
-    () => MOCK_PRODUCTS.filter((p) => p.categoryId === 'cat-vegetables').slice(0, 4),
-    []
+    () =>
+      products
+        .filter((p) => p.categorySlug === 'vegetables' || p.categoryId === 'cat-vegetables')
+        .slice(0, 4),
+    [products]
   );
 
   // 2. Farm Fresh Fruits
   const freshFruits = useMemo(
-    () => MOCK_PRODUCTS.filter((p) => p.categoryId === 'cat-fruits'),
-    []
+    () => products.filter((p) => p.categorySlug === 'fruits' || p.categoryId === 'cat-fruits'),
+    [products]
   );
 
   // 3. Black Pepper & Direct Spices
   const blackPepperProducts = useMemo(
-    () => MOCK_PRODUCTS.filter((p) => p.categoryId === 'cat-black-pepper'),
-    []
+    () =>
+      products.filter(
+        (p) => p.categorySlug === 'black-pepper' || p.categoryId === 'cat-black-pepper'
+      ),
+    [products]
   );
 
   // 4. Sukameva / Premium Dry Fruits & Nuts
   const sukamevaProducts = useMemo(
-    () => MOCK_PRODUCTS.filter((p) => p.categoryId === 'cat-sukameva').slice(0, 4),
-    []
+    () =>
+      products
+        .filter((p) => p.categorySlug === 'sukameva' || p.categoryId === 'cat-sukameva')
+        .slice(0, 4),
+    [products]
   );
+
+  if (loading && products.length === 0) {
+    return (
+      <View style={styles.container}>
+        <HeaderBar />
+        <LoadingState message="Loading morning harvest..." />
+      </View>
+    );
+  }
+
+  if (error && products.length === 0) {
+    return (
+      <View style={styles.container}>
+        <HeaderBar />
+        <ErrorState message={error} onRetry={() => void handleRetry()} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -86,7 +171,7 @@ export default function HomeScreen() {
         </View>
 
         {/* Circular Story-Style Category Aisles (Vegetables, Fruits, Black Pepper, Sukameva) */}
-        <CategoryCircleRow />
+        <CategoryCircleRow categories={categories} />
 
         {/* SECTION 1: Fresh Vegetables (2-Column Grid) */}
         <View style={styles.sectionHeaderRow}>

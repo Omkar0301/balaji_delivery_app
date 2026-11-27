@@ -1,7 +1,8 @@
-import { CartItem, DeliverySlot } from './cart';
+import { BillSummary, CartItem, DeliverySlot } from './cart';
 import { DeliveryAddress } from './user';
 
 export type OrderStatus =
+  | 'PENDING_PAYMENT'
   | 'CONFIRMED'
   | 'SORTING_PACKING'
   | 'OUT_FOR_DELIVERY'
@@ -27,6 +28,14 @@ export interface OrderTrackingStep {
   isActive: boolean;
 }
 
+export interface PaymentIntentPayload {
+  gatewayOrderId: string;
+  amountPaise: number;
+  currency: string;
+  upiIntentUrl?: string;
+  gatewayPaymentId?: string;
+}
+
 export interface Order {
   id: string;
   orderNumber: string; // e.g. "#BE-89421"
@@ -35,9 +44,15 @@ export interface Order {
   address: DeliveryAddress;
   status: OrderStatus;
   paymentMethod: 'UPI' | 'CARDS' | 'COD';
+  paymentStatus?: 'PENDING' | 'PAID' | 'FAILED' | 'REFUNDED';
+  paymentChannel?: string;
   totalAmount: number;
+  bill?: BillSummary;
   partner?: DeliveryPartner;
   trackingSteps: OrderTrackingStep[];
   guardNote?: string;
+  invoiceNumber?: string;
+  weighedAt?: string;
   createdAt: string;
+  paymentIntent?: PaymentIntentPayload;
 }

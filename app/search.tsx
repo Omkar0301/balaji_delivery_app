@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,14 +7,17 @@ import {
   FlatList,
   Pressable,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { ProductCard } from '../src/components/common/ProductCard';
 import { EmptyState } from '../src/components/common/EmptyState';
+import { LoadingState } from '../src/components/common/LoadingState';
 import { FloatingCartBar } from '../src/components/common/FloatingCartBar';
-import { MOCK_PRODUCTS } from '../src/data/mockData';
+import { productService } from '../src/services/productService';
+import { Product } from '../src/types/product';
 import { Colors } from '../src/theme/colors';
 import { Typography } from '../src/theme/typography';
 import { Spacing } from '../src/theme/spacing';
@@ -22,39 +25,63 @@ import { Radius } from '../src/theme/radius';
 import { PressableScale } from '../src/components/common/PressableScale';
 import { LottieAssets } from '../src/assets/lottie';
 
-const POPULAR_SEARCHES = ['Tomatoes', 'Apples', 'Black Pepper', 'Badam (Almonds)', 'Kaju', 'Bhindi', 'Palak', 'Bananas'];
+const DEFAULT_POPULAR_SEARCHES = ['Tomatoes', 'Apples', 'Black Pepper', 'Badam (Almonds)', 'Kaju', 'Bhindi', 'Palak', 'Bananas'];
 
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [popularSearches, setPopularSearches] = useState<string[]>(DEFAULT_POPULAR_SEARCHES);
+  const [searchResults, setSearchResults] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    productService
+      .getPopularSearches()
+      .then((res) => {
+        if (res.data.length > 0) {
+          setPopularSearches(res.data);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedQuery(query);
-    }, 200);
+    }, 250);
     return () => clearTimeout(timer);
   }, [query]);
 
-  const searchResults = useMemo(() => {
-    const trimmed = debouncedQuery.trim().toLowerCase();
-    return MOCK_PRODUCTS.filter((p) => {
-      const matchQuery =
-        !trimmed ||
-        p.name.toLowerCase().includes(trimmed) ||
-        p.regionalName.toLowerCase().includes(trimmed) ||
-        p.categoryName.toLowerCase().includes(trimmed);
+  useEffect(() => {
+    let mounted = true;
 
-      const matchTag =
-        !selectedTag ||
-        (selectedTag === 'Under ₹50' && p.basePrice < 50) ||
-        (selectedTag === 'A-Grade' && p.grade === 'A-Grade') ||
-        (selectedTag === 'Fruits' && p.categoryId === 'cat-fruits') ||
-        (selectedTag === 'Sukameva' && p.categoryId === 'cat-sukameva');
+    const filter: Parameters<typeof productService.getProducts>[0] = {
+      searchQuery: debouncedQuery.trim() || undefined,
+      limit: 40,
+    };
 
-      return matchQuery && matchTag;
-    });
+    if (selectedTag === 'Under ₹50') filter.maxPrice = 50;
+    else if (selectedTag === 'A-Grade') filter.grade = 'A-Grade';
+    else if (selectedTag === 'Fruits') filter.categorySlug = 'fruits';
+    else if (selectedTag === 'Sukameva') filter.categorySlug = 'sukameva';
+
+    productService
+      .getProducts(filter)
+      .then((res) => {
+        if (mounted) setSearchResults(res.data);
+      })
+      .catch(() => {
+        if (mounted) setSearchResults([]);
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, [debouncedQuery, selectedTag]);
 
   return (
@@ -115,7 +142,7 @@ export default function SearchScreen() {
         <View style={styles.popularContainer}>
           <Text style={styles.popularTitle}>POPULAR SEARCHES</Text>
           <View style={styles.popularChipsWrap}>
-            {POPULAR_SEARCHES.map((item) => (
+            {popularSearches.map((item) => (
               <PressableScale
                 key={item}
                 onPress={() => setQuery(item)}
@@ -141,26 +168,34 @@ export default function SearchScreen() {
       {/* Results List */}
       <FlatList
         data={searchResults}
+        initialNumToRender={8}
+        maxToRenderPerBatch={6}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
         keyExtractor={(item) => item.id}
         contentContainerStyle={[styles.listContent, { paddingBottom: 110 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => <ProductCard product={item} />}
         ListEmptyComponent={
-          <EmptyState
-            lottieSource={LottieAssets.emptySearch}
-            title="No vegetables found"
-            description={`We couldn't find anything matching "${query}". Try searching for Gujarati names like "Batata" or "Bhindi".`}
-            actionLabel="Clear Search"
-            onAction={() => {
-              setQuery('');
-              setSelectedTag(null);
-            }}
-          />
+          loading ? (
+            <LoadingState message="Searching fresh produce..." />
+          ) : (
+            <EmptyState
+              lottieSource={LottieAssets.emptySearch}
+              title="No vegetables found"
+              description={`We couldn't find anything matching "${query}". Try searching for Gujarati names like "Batata" or "Bhindi".`}
+              actionLabel="Clear Search"
+              onAction={() => {
+                setQuery('');
+                setSelectedTag(null);
+              }}
+            />
+          )
         }
       />
 
       {/* Floating Bottom Cart Bar */}
-      <FloatingCartBar />
+      {(!loading || searchResults.length > 0) && <FloatingCartBar />}
     </SafeAreaView>
   );
 }

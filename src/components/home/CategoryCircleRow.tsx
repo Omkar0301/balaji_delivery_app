@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,8 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
-import { MOCK_CATEGORIES } from '../../data/mockData';
+import { productService } from '../../services/productService';
+import { Category } from '../../types/product';
 import { Colors } from '../../theme/colors';
 import { Spacing } from '../../theme/spacing';
 import { Radius } from '../../theme/radius';
@@ -16,7 +17,28 @@ import { Shadows } from '../../theme/shadows';
 import { ProgressiveImage } from '../feedback/ProgressiveImage';
 import { PressableScale } from '../common/PressableScale';
 
-export const CategoryCircleRow: React.FC = () => {
+interface CategoryCircleRowProps {
+  categories?: Category[];
+}
+
+export const CategoryCircleRow: React.FC<CategoryCircleRowProps> = ({ categories: propCategories }) => {
+  const [fetchedCategories, setFetchedCategories] = useState<Category[]>([]);
+  const categories = propCategories ?? fetchedCategories;
+
+  useEffect(() => {
+    if (propCategories) return;
+    let mounted = true;
+    productService
+      .getCategories()
+      .then((res) => {
+        if (mounted) setFetchedCategories(res.data);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, [propCategories]);
+
   return (
     <View style={styles.container}>
       {/* Header Row */}
@@ -30,7 +52,7 @@ export const CategoryCircleRow: React.FC = () => {
           style={styles.seeAllBtn}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Text style={styles.seeAllText}>See All ({MOCK_CATEGORIES.length})</Text>
+          <Text style={styles.seeAllText}>See All ({categories.length})</Text>
           <MaterialIcons name="chevron-right" size={16} color={Colors.primary} />
         </Pressable>
       </View>
@@ -43,7 +65,7 @@ export const CategoryCircleRow: React.FC = () => {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        {MOCK_CATEGORIES.map((cat) => (
+        {categories.map((cat) => (
           <PressableScale
             key={cat.id}
             onPress={() =>

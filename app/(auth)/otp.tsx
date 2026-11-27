@@ -24,7 +24,7 @@ import { useToast } from '../../src/context/ToastContext';
 
 export default function OtpScreen() {
   const insets = useSafeAreaInsets();
-  const { phone, verifyOtp } = useAuthContext();
+  const { phone, login, verifyOtp } = useAuthContext();
   const { showSuccess } = useToast();
   const [digits, setDigits] = useState(['', '', '', '']);
   const [countdown, setCountdown] = useState(28);
@@ -121,27 +121,38 @@ export default function OtpScreen() {
     setLoading(true);
     setError(null);
     try {
-      const success = await verifyOtp(fullOtp);
-      if (success) {
-        router.push('/(auth)/profile-setup');
+      const { ok, isNewUser } = await verifyOtp(fullOtp);
+      if (ok) {
+        if (isNewUser) {
+          router.replace('/(auth)/profile-setup');
+        } else {
+          router.replace('/(tabs)');
+        }
       } else {
-        setError('Invalid OTP code. For demo, enter 1234.');
+        setError('Invalid OTP code. Please check and retry.');
         triggerShake();
       }
-    } catch {
-      setError('Verification failed. Please retry.');
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      setError(apiErr?.message || 'Verification failed. Please retry.');
       triggerShake();
     } finally {
       setLoading(false);
     }
   };
 
-  const handleResend = () => {
+  const handleResend = async () => {
     if (countdown > 0) return;
     setCountdown(28);
     setDigits(['', '', '', '']);
     setError(null);
-    showSuccess(`Fresh verification code sent to +91 ${phone || '9876543210'}`);
+    try {
+      await login(phone);
+      showSuccess(`Fresh verification code sent to ${phone || 'your mobile'}`);
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      setError(apiErr?.message || 'Failed to resend code. Please wait a moment.');
+    }
   };
 
   const activeIndex = digits.findIndex((d) => d === '');

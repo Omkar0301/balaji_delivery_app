@@ -23,10 +23,11 @@ import { formatPhoneNumber, validateIndianPhone } from '../../src/utils/validati
 import { PressableScale } from '../../src/components/common/PressableScale';
 
 export default function LoginScreen() {
-  const { phone, login } = useAuthContext();
-  const [phoneNumber, setPhoneNumber] = useState(phone || '');
+  const { phone, login, loginAsGuest } = useAuthContext();
+  const [phoneNumber, setPhoneNumber] = useState(() => formatPhoneNumber(phone || ''));
   const [lang, setLang] = useState<'en' | 'gu'>('en');
   const [loading, setLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isFocused, setIsFocused] = useState(false);
 
@@ -49,12 +50,37 @@ export default function LoginScreen() {
     setError(null);
     setLoading(true);
     try {
-      await login(numToSubmit);
+      await login(numToSubmit, lang);
       router.push('/(auth)/otp');
-    } catch {
-      setError(lang === 'en' ? 'Failed to send verification code. Please retry.' : 'ઓટીપી મોકલવામાં ભૂલ થઈ. ફરી પ્રયાસ કરો.');
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      setError(
+        apiErr?.message ||
+          (lang === 'en'
+            ? 'Failed to send verification code. Please retry.'
+            : 'ઓટીપી મોકલવામાં ભૂલ થઈ. ફરી પ્રયાસ કરો.')
+      );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    setError(null);
+    setGuestLoading(true);
+    try {
+      await loginAsGuest(lang);
+      router.replace('/(tabs)');
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      setError(
+        apiErr?.message ||
+          (lang === 'en'
+            ? 'Unable to start guest session. Please retry.'
+            : 'ગેસ્ટ લોગિન શરૂ કરવામાં ભૂલ થઈ. ફરી પ્રયાસ કરો.')
+      );
+    } finally {
+      setGuestLoading(false);
     }
   };
 
@@ -181,7 +207,7 @@ export default function LoginScreen() {
             {/* Continue Button */}
             <PressableScale
               onPress={() => handleSendOtp()}
-              disabled={loading}
+              disabled={loading || guestLoading}
               activeScale={0.98}
               style={[
                 styles.continueBtn,
@@ -198,6 +224,37 @@ export default function LoginScreen() {
                     {lang === 'en' ? 'Continue' : 'આગળ વધો'}
                   </Text>
                   <MaterialIcons name="arrow-forward" size={20} color="#FFFFFF" />
+                </>
+              )}
+            </PressableScale>
+
+            <PressableScale
+              onPress={() => void handleGuestLogin()}
+              disabled={loading || guestLoading}
+              activeScale={0.98}
+              style={{
+                marginTop: Spacing.sm,
+                height: 48,
+                borderRadius: Radius.md,
+                borderWidth: 1,
+                borderColor: Colors.border,
+                backgroundColor: Colors.surface,
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexDirection: 'row',
+                gap: 8,
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Continue as Guest"
+            >
+              {guestLoading ? (
+                <ActivityIndicator color={Colors.primary} size="small" />
+              ) : (
+                <>
+                  <MaterialIcons name="person-outline" size={18} color={Colors.primary} />
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: Colors.primary }}>
+                    {lang === 'en' ? 'Continue as Guest' : 'ગેસ્ટ તરીકે આગળ વધો'}
+                  </Text>
                 </>
               )}
             </PressableScale>

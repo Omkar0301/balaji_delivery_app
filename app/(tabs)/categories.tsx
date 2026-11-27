@@ -1,12 +1,15 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { CategoryCard } from '../../src/components/common/CategoryCard';
 import { FloatingCartBar } from '../../src/components/common/FloatingCartBar';
+import { ErrorState } from '../../src/components/common/ErrorState';
+import { LoadingState } from '../../src/components/common/LoadingState';
 import { useToast } from '../../src/context/ToastContext';
-import { MOCK_CATEGORIES } from '../../src/data/mockData';
+import { productService } from '../../src/services/productService';
+import { Category } from '../../src/types/product';
 import { Colors } from '../../src/theme/colors';
 import { Typography } from '../../src/theme/typography';
 import { Spacing } from '../../src/theme/spacing';
@@ -15,15 +18,66 @@ import { PressableScale } from '../../src/components/common/PressableScale';
 
 export default function CategoriesScreen() {
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
   const { showSuccess } = useToast();
 
-  const onRefresh = useCallback(() => {
+  const fetchCategories = useCallback(async () => {
+    const res = await productService.getCategories();
+    setCategories(res.data);
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    productService
+      .getCategories()
+      .then((res) => {
+        if (mounted) {
+          setCategories(res.data);
+          setError(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (mounted) {
+          const apiErr = err as { message?: string };
+          setError(apiErr?.message || 'Unable to load categories');
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const handleRetry = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await fetchCategories();
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      setError(apiErr?.message || 'Unable to load categories');
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchCategories]);
+
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
+    try {
+      await fetchCategories();
       showSuccess('Categories directory updated');
-    }, 500);
-  }, [showSuccess]);
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      setError(apiErr?.message || 'Unable to load categories');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchCategories, showSuccess]);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       {/* Top Search & Header */}
@@ -44,35 +98,42 @@ export default function CategoriesScreen() {
         </PressableScale>
       </View>
 
-      {/* 2 Column Category Grid */}
-      <FlatList
-        data={MOCK_CATEGORIES}
-        keyExtractor={(item) => item.id}
-        numColumns={2}
-        contentContainerStyle={styles.listContent}
-        columnWrapperStyle={styles.columnWrapper}
-        refreshing={refreshing}
-        onRefresh={onRefresh}
-        renderItem={({ item }) => (
-          <View style={styles.gridItem}>
-            <CategoryCard category={item} />
-          </View>
-        )}
-        ListFooterComponent={
-          <View style={styles.footerNote}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-              <MaterialIcons name="eco" size={18} color={Colors.primary} />
-              <Text style={styles.footerTitle}>100% Direct Farm & Vendor Sourced</Text>
+      {loading && categories.length === 0 ? (
+        <LoadingState message="Loading categories..." />
+      ) : error && categories.length === 0 ? (
+        <ErrorState message={error} onRetry={() => void handleRetry()} />
+      ) : (
+        <FlatList
+          data={categories}
+          keyExtractor={(item) => item.id}
+          numColumns={2}
+          contentContainerStyle={styles.listContent}
+          columnWrapperStyle={styles.columnWrapper}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          renderItem={({ item }) => (
+            <View style={styles.gridItem}>
+              <CategoryCard category={item} />
             </View>
-            <Text style={styles.footerText}>
-              Vegetables, fresh fruits, graded Malabar black pepper, and premium dry fruits harvested and quality-sorted daily.
-            </Text>
-          </View>
-        }
-      />
+          )}
+          ListFooterComponent={
+            <View style={styles.footerNote}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <MaterialIcons name="eco" size={18} color={Colors.primary} />
+                <Text style={styles.footerTitle}>100% Direct Farm & Vendor Sourced</Text>
+              </View>
+              <Text style={styles.footerText}>
+                Vegetables, fresh fruits, graded Malabar black pepper, and premium dry fruits harvested and quality-sorted daily.
+              </Text>
+            </View>
+          }
+        />
+      )}
 
       {/* Floating Bottom Cart Bar */}
-      <FloatingCartBar bottomOffset={12} inTabs={true} />
+      {(!loading || categories.length > 0) && (
+        <FloatingCartBar bottomOffset={12} inTabs={true} />
+      )}
     </SafeAreaView>
   );
 }

@@ -11,7 +11,7 @@ import { AppLottie } from '../src/components/common/AppLottie';
 import { LottieAssets } from '../src/assets/lottie';
 
 export default function EntryScreen() {
-  const { isLoggedIn } = useAuthContext();
+  const { isLoggedIn, isHydrating } = useAuthContext();
   const rootNavigationState = useRootNavigationState();
 
   const [logoScale] = useState(() => new Animated.Value(0.85));
@@ -32,23 +32,19 @@ export default function EntryScreen() {
   }, [logoScale, logoOpacity]);
 
   useEffect(() => {
-    // Wait until Expo Router root navigation state is ready before navigating
-    if (!rootNavigationState?.key) return;
+    // Wait until session hydration and Expo Router root navigation state are ready
+    if (isHydrating || !rootNavigationState?.key) return;
 
-    const timer = setTimeout(() => {
-      try {
-        if (isLoggedIn) {
-          router.replace('/(tabs)');
-        } else {
-          router.replace('/(auth)/welcome');
-        }
-      } catch (err) {
-        console.error('Failed to navigate from entry screen:', err);
+    try {
+      if (isLoggedIn) {
+        router.replace('/(tabs)');
+      } else {
+        router.replace('/(auth)/welcome');
       }
-    }, 450);
-
-    return () => clearTimeout(timer);
-  }, [isLoggedIn, rootNavigationState?.key]);
+    } catch (err) {
+      console.error('Failed to navigate from entry screen:', err);
+    }
+  }, [isHydrating, isLoggedIn, rootNavigationState?.key]);
 
   return (
     <View style={styles.container}>

@@ -1,10 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useAuthContext } from '../../src/context/AuthContext';
 import { useCartContext } from '../../src/context/CartContext';
+import { useCheckoutContext } from '../../src/context/CheckoutContext';
 import { useToast } from '../../src/context/ToastContext';
+import { cartService } from '../../src/services/cartService';
+import { orderService } from '../../src/services/orderService';
+import { DeliverySlot } from '../../src/types/cart';
 import { Colors } from '../../src/theme/colors';
 import { Typography } from '../../src/theme/typography';
 import { Spacing } from '../../src/theme/spacing';
@@ -17,20 +22,105 @@ import { LottieAssets } from '../../src/assets/lottie';
 import { GooglePayIcon, PhonePeIcon, PaytmIcon } from '../../src/components/common/PaymentBrandIcons';
 
 export default function PaymentScreen() {
+  const { user } = useAuthContext();
   const { bill, clearCart } = useCartContext();
-  const { showSuccess } = useToast();
+  const { selectedSlot, setSelectedSlot, selectedAddressId, guardNote, resetCheckout } =
+    useCheckoutContext();
+  const { showSuccess, showError } = useToast();
   const insets = useSafeAreaInsets();
   const [selectedMethod, setSelectedMethod] = useState<'gpay' | 'phonepe' | 'paytm' | 'cod'>('gpay');
+  const [slots, setSlots] = useState<DeliverySlot[]>([]);
   const [loading, setLoading] = useState(false);
+  const idempotencyKeyRef = useRef<string | null>(null);
 
-  const handlePlaceOrder = () => {
+  const activeAddress =
+    user?.savedAddresses.find((a) => a.id === selectedAddressId) ||
+    user?.savedAddresses.find((a) => a.isDefault) ||
+    user?.savedAddresses[0];
+
+  const activeSlot = selectedSlot || slots[0] || null;
+
+  useEffect(() => {
+    let mounted = true;
+    cartService
+      .getDeliverySlots()
+      .then((res) => {
+        if (!mounted) return;
+        setSlots(res.data);
+        if (!selectedSlot && res.data[0]) {
+          setSelectedSlot(res.data[0]);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, [selectedSlot, setSelectedSlot]);
+
+  const handlePlaceOrder = async () => {
+    if (!activeAddress) {
+      showError('Please add a delivery address first');
+      router.push('/address/add');
+      return;
+    }
+    if (!activeSlot) {
+      showError('No morning delivery slots available right now');
+      return;
+    }
+
     setLoading(true);
-    setTimeout(() => {
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = `ord_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    }
+    try {
+      const paymentMethod = selectedMethod === 'cod' ? 'COD' : 'UPI';
+      const res = await orderService.createOrder(
+        {
+          addressId: activeAddress.id,
+          slotId: activeSlot.id,
+          paymentMethod,
+          paymentChannel: selectedMethod,
+          guardNote: guardNote || undefined,
+        },
+        idempotencyKeyRef.current
+      );
+
+      const { order: createdOrder, paymentOrder } = res.data;
+
+      if (paymentMethod === 'UPI' && paymentOrder?.gatewayOrderId) {
+        await orderService.verifyPayment({
+          orderId: createdOrder.id,
+          gatewayOrderId: paymentOrder.gatewayOrderId,
+          gatewayPaymentId: `pay_mock_${Date.now()}`,
+          signature: 'MOCK_DIRECT_SUCCESS',
+        });
+      }
+
+      await clearCart();
+      idempotencyKeyRef.current = null;
+      resetCheckout();
+      showSuccess(
+        paymentMethod === 'UPI'
+          ? 'Payment successful! Morning order confirmed'
+          : 'Order confirmed! Morning delivery scheduled'
+      );
+      router.replace({
+        pathname: '/order/confirmed',
+        params: {
+          orderId: createdOrder.id,
+          orderNumber: createdOrder.orderNumber,
+          totalAmount: String(createdOrder.totalAmount),
+          paymentMethod: createdOrder.paymentMethod,
+          slotLabel: `${activeSlot.date}, ${activeSlot.timeRange}`,
+          addressLabel: `${activeAddress.flatNumber}, ${activeAddress.buildingName}, ${activeAddress.city}`,
+        },
+      });
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      showError(apiErr?.message || 'Could not place order. Please retry.');
+    } finally {
       setLoading(false);
-      clearCart();
-      showSuccess('Order confirmed! Morning delivery scheduled');
-      router.replace('/order/confirmed');
-    }, 800);
+    }
   };
 
   return (

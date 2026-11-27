@@ -34,24 +34,27 @@ export default function ProfileSetupScreen() {
     ? `${defaultAddr.street || defaultAddr.flatNumber}, Surat`
     : 'Adajan Canal Road, Surat';
 
-  const handleCompleteSetup = () => {
-    if (!fullName.trim()) {
-      setError('Please enter your full name');
+  const handleCompleteSetup = async () => {
+    if (fullName.trim().length < 2) {
+      setError('Full name must be at least 2 characters');
       return;
     }
 
     setLoading(true);
     setError(null);
-    updateProfile({
-      fullName: fullName.trim(),
-      preferredLanguage: language === 'en' ? 'en' : 'gu',
-    });
-
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      await updateProfile({
+        fullName: fullName.trim(),
+        preferredLanguage: language === 'en' ? 'en' : 'gu',
+      });
       showSuccess(`Welcome to Balaji Fresh, ${fullName.trim()}!`);
       router.replace('/(tabs)');
-    }, 600);
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      setError(apiErr?.message || 'Could not save your profile. Please retry.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

@@ -13,30 +13,48 @@ import { Shadows } from '../../src/theme/shadows';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { user, updateProfile, setDefaultAddress, logout } = useAuthContext();
-  const { showSuccess, showInfo } = useToast();
+  const { user, isLoggedIn, refreshProfile, updateProfile, setDefaultAddress, logout } =
+    useAuthContext();
+  const { showSuccess, showInfo, showError } = useToast();
   const [refreshing, setRefreshing] = useState(false);
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
+    if (!isLoggedIn) return;
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
+    try {
+      await refreshProfile();
       showSuccess('Profile & address book updated');
-    }, 500);
-  }, [showSuccess]);
+    } catch {
+      showError('Could not refresh profile');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [isLoggedIn, refreshProfile, showSuccess, showError]);
 
-  const handleSetDefaultAddress = (id: string) => {
-    setDefaultAddress(id);
-    showSuccess('Default morning delivery address updated');
+  const handleSetDefaultAddress = async (id: string) => {
+    try {
+      await setDefaultAddress(id);
+      showSuccess('Default morning delivery address updated');
+    } catch {
+      showError('Failed to update default address');
+    }
   };
 
-  const handleUpdateLanguage = (lang: 'gu' | 'en') => {
-    updateProfile({ preferredLanguage: lang });
-    showSuccess('App language updated');
+  const handleUpdateLanguage = async (lang: 'gu' | 'en') => {
+    if (!isLoggedIn) {
+      router.push('/(auth)/login');
+      return;
+    }
+    try {
+      await updateProfile({ preferredLanguage: lang });
+      showSuccess('App language updated');
+    } catch {
+      showError('Failed to update language');
+    }
   };
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     showInfo('Signed out safely');
     router.replace('/(auth)/login');
   };
@@ -67,12 +85,22 @@ export default function ProfileScreen() {
             </Text>
           </View>
           <View style={styles.profileInfo}>
-            <Text style={styles.userName}>{user?.fullName || 'Rajesh Patel'}</Text>
-            <Text style={styles.userPhone}>+91 {user?.phone || '9876543210'}</Text>
+            <Text style={styles.userName}>{user?.fullName || 'Guest User'}</Text>
+            <Text style={styles.userPhone}>
+              {user?.phone?.startsWith('guest_')
+                ? 'Guest Session'
+                : `+91 ${user?.phone || '9876543210'}`}
+            </Text>
             <View style={styles.badgeRow}>
               <View style={[styles.verifiedBadge, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
-                <MaterialIcons name="verified" size={12} color={Colors.primary} />
-                <Text style={styles.verifiedText}>Verified Customer</Text>
+                <MaterialIcons
+                  name={user?.isVerified ? 'verified' : 'person-outline'}
+                  size={12}
+                  color={Colors.primary}
+                />
+                <Text style={styles.verifiedText}>
+                  {user?.isVerified ? 'Verified Customer' : 'Guest Account'}
+                </Text>
               </View>
             </View>
           </View>

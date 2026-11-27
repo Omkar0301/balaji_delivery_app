@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Animated, Platform } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Colors } from '../../src/theme/colors';
@@ -12,10 +12,24 @@ import { Motion } from '../../src/theme/motion';
 import { PressableScale } from '../../src/components/common/PressableScale';
 import { AppLottie } from '../../src/components/common/AppLottie';
 import { LottieAssets } from '../../src/assets/lottie';
+import { formatCurrency } from '../../src/utils/formatters';
 
 export default function OrderConfirmedScreen() {
   const insets = useSafeAreaInsets();
-  const orderNumber = '#BE-89421';
+  const params = useLocalSearchParams<{
+    orderId?: string;
+    orderNumber?: string;
+    totalAmount?: string;
+    paymentMethod?: string;
+    slotLabel?: string;
+    addressLabel?: string;
+  }>();
+  const orderId = params.orderId || '';
+  const orderNumber = params.orderNumber || '#BE-ORDER';
+  const totalAmount = Number(params.totalAmount || 0);
+  const paymentMethod = params.paymentMethod || 'UPI';
+  const slotLabel = params.slotLabel || 'Tomorrow, 8:00 AM – 12:00 PM';
+  const addressLabel = params.addressLabel || 'Saved Delivery Address';
 
   const [iconScale] = useState(() => new Animated.Value(0.2));
   const [contentTranslateY] = useState(() => new Animated.Value(25));
@@ -71,17 +85,21 @@ export default function OrderConfirmedScreen() {
 
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Scheduled Delivery:</Text>
-              <Text style={styles.infoValue}>Tomorrow, 8:00 AM – 12:00 PM</Text>
+              <Text style={styles.infoValue}>{slotLabel}</Text>
             </View>
 
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Delivery Address:</Text>
-              <Text style={styles.infoValue}>B-402, Shivalik Greens, Surat</Text>
+              <Text style={styles.infoValue}>{addressLabel}</Text>
             </View>
 
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Payment Status:</Text>
-              <Text style={styles.paidBadge}>PAID VIA UPI (₹114)</Text>
+              <Text style={styles.paidBadge}>
+                {paymentMethod === 'COD'
+                  ? `CASH ON DELIVERY (${formatCurrency(totalAmount)})`
+                  : `UPI (${formatCurrency(totalAmount)})`}
+              </Text>
             </View>
 
             <View style={styles.infoRow}>
@@ -93,7 +111,11 @@ export default function OrderConfirmedScreen() {
           {/* Actions */}
           <View style={styles.actionsContainer}>
             <PressableScale
-              onPress={() => router.push('/order/track/ord-89421')}
+              onPress={() =>
+                orderId
+                  ? router.push({ pathname: '/order/track/[id]', params: { id: orderId } })
+                  : router.replace('/(tabs)/orders')
+              }
               activeScale={0.98}
               style={styles.trackButton}
             >
@@ -101,6 +123,17 @@ export default function OrderConfirmedScreen() {
                 <MaterialIcons name="local-shipping" size={20} color="#FFFFFF" />
                 <Text style={styles.trackButtonText}>View Delivery Status</Text>
                 <MaterialIcons name="arrow-forward" size={18} color="#FFFFFF" />
+              </View>
+            </PressableScale>
+
+            <PressableScale
+              onPress={() => router.replace('/(tabs)/orders')}
+              activeScale={0.98}
+              style={styles.ordersButton}
+            >
+              <View style={styles.trackButtonContent}>
+                <MaterialIcons name="receipt-long" size={18} color={Colors.primary} />
+                <Text style={styles.ordersButtonText}>My Orders List</Text>
               </View>
             </PressableScale>
 
@@ -230,6 +263,20 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: Typography.bodyLarge.fontSize,
     fontWeight: '800',
+  },
+  ordersButton: {
+    backgroundColor: '#E8F5E9',
+    height: 48,
+    borderRadius: Radius.md,
+    borderWidth: 1.5,
+    borderColor: '#C8E6C9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ordersButtonText: {
+    color: Colors.primary,
+    fontSize: Typography.body.fontSize,
+    fontWeight: '700',
   },
   homeButton: {
     backgroundColor: Colors.surface,

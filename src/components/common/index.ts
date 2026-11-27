@@ -5,3 +5,5 @@ export { ProductCard } from './ProductCard';
 export { CategoryCard } from './CategoryCard';
 export { BillSummaryCard } from './BillSummaryCard';
 export { EmptyState } from './EmptyState';
+export { ErrorState } from './ErrorState';
+export { LoadingState } from './LoadingState';

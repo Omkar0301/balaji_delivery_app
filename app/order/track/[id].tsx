@@ -1,11 +1,23 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl, Animated, Easing } from 'react-native';
-import { router } from 'expo-router';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  RefreshControl,
+  Animated,
+  Easing,
+} from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { MOCK_LIVE_ORDER } from '../../../src/data/mockData';
+import { orderService } from '../../../src/services/orderService';
 import { useToast } from '../../../src/context/ToastContext';
 import { ProgressiveImage } from '../../../src/components/feedback/ProgressiveImage';
+import { ErrorState } from '../../../src/components/common/ErrorState';
+import { LoadingState } from '../../../src/components/common/LoadingState';
+import { Order } from '../../../src/types/order';
 import { Colors } from '../../../src/theme/colors';
 import { Typography } from '../../../src/theme/typography';
 import { Spacing } from '../../../src/theme/spacing';
@@ -17,12 +29,55 @@ import { AppLottie } from '../../../src/components/common/AppLottie';
 import { LottieAssets } from '../../../src/assets/lottie';
 
 export default function LiveTrackingScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
-  const order = MOCK_LIVE_ORDER;
+  const [order, setOrder] = useState<Order | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const { showInfo, showSuccess } = useToast();
   const [refreshing, setRefreshing] = useState(false);
 
   const [haloAnim] = useState(() => new Animated.Value(0));
+
+  const handleRetry = useCallback(async () => {
+    if (!id) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await orderService.getLiveTracking(id);
+      setOrder(res.data);
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      setError(apiErr?.message || 'Unable to load order tracking');
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    let mounted = true;
+    orderService
+      .getLiveTracking(id)
+      .then((res) => {
+        if (mounted) {
+          setOrder(res.data);
+          setError(null);
+        }
+      })
+      .catch((err: unknown) => {
+        if (mounted) {
+          const apiErr = err as { message?: string };
+          setError(apiErr?.message || 'Unable to load order tracking');
+        }
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [id]);
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -47,13 +102,46 @@ export default function LiveTrackingScreen() {
     outputRange: [0.8, 0.4, 0],
   });
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
+    if (!id) return;
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
+    try {
+      const res = await orderService.getLiveTracking(id);
+      setOrder(res.data);
       showSuccess('Delivery status updated');
-    }, 600);
-  }, [showSuccess]);
+    } catch (err: unknown) {
+      const apiErr = err as { message?: string };
+      setError(apiErr?.message || 'Unable to load order tracking');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [id, showSuccess]);
+
+  if (loading || !order) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.header}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.backButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <View style={styles.backRow}>
+              <MaterialIcons name="arrow-back" size={20} color={Colors.primary} />
+              <Text style={styles.backButtonText}>Back</Text>
+            </View>
+          </Pressable>
+          <Text style={styles.headerTitle}>Morning Delivery Status</Text>
+          <View style={{ width: 48 }} />
+        </View>
+        {error ? (
+          <ErrorState message={error} onRetry={() => void handleRetry()} />
+        ) : (
+          <LoadingState message="Loading delivery tracking..." />
+        )}
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>

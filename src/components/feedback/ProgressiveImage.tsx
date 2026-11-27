@@ -13,17 +13,29 @@ export interface ProgressiveImageProps extends Omit<ImageProps, 'source'> {
   uri: string;
   fallbackEmoji?: string;
   borderRadius?: number;
+  maxWidth?: number;
+}
+
+function optimizeImageUri(uri: string, maxWidth: number): string {
+  if (!uri || !uri.includes('images.unsplash.com')) return uri;
+  if (uri.includes('w=')) {
+    return uri.replace(/w=\d+/, `w=${maxWidth}`);
+  }
+  const sep = uri.includes('?') ? '&' : '?';
+  return `${uri}${sep}w=${maxWidth}&auto=format&fit=crop&q=75`;
 }
 
 export const ProgressiveImage: React.FC<ProgressiveImageProps> = ({
   uri,
   fallbackEmoji = '🥦',
   borderRadius = 0,
+  maxWidth = 400,
   style,
   ...props
 }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const optimizedUri = optimizeImageUri(uri, maxWidth);
 
   return (
     <View style={[styles.container, { borderRadius }, style]}>
@@ -40,7 +52,7 @@ export const ProgressiveImage: React.FC<ProgressiveImageProps> = ({
       {/* Actual Remote Image */}
       {!error && (
         <Image
-          source={{ uri }}
+          source={{ uri: optimizedUri }}
           style={[styles.image, { borderRadius }]}
           onLoadEnd={() => setLoading(false)}
           onError={() => {

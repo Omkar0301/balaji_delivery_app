@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,13 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { MOCK_PRODUCTS } from '../../src/data/mockData';
+import { productService } from '../../src/services/productService';
 import { useCartContext } from '../../src/context/CartContext';
 import { useToast } from '../../src/context/ToastContext';
 import { ProgressiveImage } from '../../src/components/feedback/ProgressiveImage';
-import { WeightOption } from '../../src/types/product';
+import { ErrorState } from '../../src/components/common/ErrorState';
+import { LoadingState } from '../../src/components/common/LoadingState';
+import { Product, WeightOption } from '../../src/types/product';
 import { Colors } from '../../src/theme/colors';
 import { Typography } from '../../src/theme/typography';
 import { Spacing } from '../../src/theme/spacing';
@@ -25,27 +27,76 @@ import { PressableScale } from '../../src/components/common/PressableScale';
 
 export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const product = MOCK_PRODUCTS.find((p) => p.id === id) || MOCK_PRODUCTS[0]!;
-
-  const [selectedWeight, setSelectedWeight] = useState<WeightOption>(
-    product.weightOptions[0] || {
-      id: 'default',
-      label: '1 unit',
-      weightInGrams: 1000,
-      price: product.basePrice,
-      mrp: product.baseMrp,
-    }
-  );
+  const [product, setProduct] = useState<Product | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedWeight, setSelectedWeight] = useState<WeightOption | null>(null);
 
   const { getCartItem, addItem, updateQuantity, totalItemCount, itemTotal } = useCartContext();
   const { showSuccess } = useToast();
+  const insets = useSafeAreaInsets();
+  const [scrollY] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    if (!id) return;
+    let mounted = true;
+    productService
+      .getProductById(id)
+      .then((res) => {
+        if (!mounted) return;
+        setProduct(res.data);
+        setError(null);
+        setSelectedWeight(
+          res.data.weightOptions[0] || {
+            id: 'default',
+            label: '1 unit',
+            weightInGrams: 1000,
+            price: res.data.basePrice,
+            mrp: res.data.baseMrp,
+          }
+        );
+      })
+      .catch((err: unknown) => {
+        if (!mounted) return;
+        const apiErr = err as { message?: string };
+        setError(apiErr?.message || 'Unable to load product details');
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [id]);
+
+  if (loading || !product || !selectedWeight) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.header}>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.backButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <MaterialIcons name="arrow-back" size={20} color={Colors.primary} />
+              <Text style={styles.backButtonText}>Back</Text>
+            </View>
+          </Pressable>
+        </View>
+        {error ? (
+          <ErrorState message={error} onRetry={() => router.replace(`/product/${id}`)} />
+        ) : (
+          <LoadingState message="Loading product details..." />
+        )}
+      </SafeAreaView>
+    );
+  }
+
   const cartItem = getCartItem(product.id, selectedWeight.id);
   const currentQuantity = cartItem ? cartItem.quantity : 0;
-
-  const insets = useSafeAreaInsets();
   const discount = formatDiscountPercentage(selectedWeight.mrp, selectedWeight.price);
-
-  const [scrollY] = useState(() => new Animated.Value(0));
   const imageScale = scrollY.interpolate({
     inputRange: [-160, 0],
     outputRange: [1.3, 1],

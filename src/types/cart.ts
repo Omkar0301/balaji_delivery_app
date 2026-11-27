@@ -12,9 +12,12 @@ export interface DeliverySlot {
   title: string;
   timeRange: string;
   date: string;
+  slotDate?: string;
   isMorning: boolean;
   isAvailable: boolean;
+  remainingCapacity?: number;
   tag?: string;
+  cutoffTime?: string;
 }
 
 export interface BillSummary {

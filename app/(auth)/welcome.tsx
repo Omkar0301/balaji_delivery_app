@@ -18,9 +18,12 @@ import { Radius } from '../../src/theme/radius';
 import { Shadows } from '../../src/theme/shadows';
 import { Motion } from '../../src/theme/motion';
 import { PressableScale } from '../../src/components/common/PressableScale';
+import { useAuthContext } from '../../src/context/AuthContext';
 
 export default function WelcomeScreen() {
+  const { loginAsGuest } = useAuthContext();
   const [lang, setLang] = useState<'en' | 'gu'>('en');
+  const [guestLoading, setGuestLoading] = useState(false);
 
   const [cardsOpacity] = useState(() => new Animated.Value(0));
   const [cardsTranslateY] = useState(() => new Animated.Value(25));
@@ -172,13 +175,22 @@ export default function WelcomeScreen() {
           </PressableScale>
 
           <PressableScale
-            onPress={() => router.replace('/(tabs)')}
+            onPress={() => {
+              setGuestLoading(true);
+              loginAsGuest(lang)
+                .then(() => router.replace('/(tabs)'))
+                .catch(() => router.replace('/(tabs)'))
+                .finally(() => setGuestLoading(false));
+            }}
+            disabled={guestLoading}
             activeScale={0.98}
             style={styles.secondaryCta}
             accessibilityRole="button"
             accessibilityLabel={content.explore}
           >
-            <Text style={styles.secondaryCtaText}>{content.explore}</Text>
+            <Text style={styles.secondaryCtaText}>
+              {guestLoading ? 'Starting guest session...' : content.explore}
+            </Text>
           </PressableScale>
 
           <Text style={styles.legalText}>
