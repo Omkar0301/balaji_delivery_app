@@ -7,3 +7,4 @@ export { BillSummaryCard } from './BillSummaryCard';
 export { EmptyState } from './EmptyState';
 export { ErrorState } from './ErrorState';
 export { LoadingState } from './LoadingState';
+export { DemoBadge } from './DemoBadge';
