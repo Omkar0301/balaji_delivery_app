@@ -1,10 +1,13 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
+import Constants from 'expo-constants';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuthContext } from '../../src/context/AuthContext';
 import { useToast } from '../../src/context/ToastContext';
+import { APP_CONSTANTS } from '../../src/constants/app';
+import { DemoBadge } from '../../src/components/common/DemoBadge';
 import { Colors } from '../../src/theme/colors';
 import { Typography } from '../../src/theme/typography';
 import { Spacing } from '../../src/theme/spacing';
@@ -149,6 +152,21 @@ export default function ProfileScreen() {
           <MaterialIcons name="logout" size={18} color="#DC2626" />
           <Text style={styles.logoutText}>Log Out</Text>
         </Pressable>
+
+        {/* About & Version Footer */}
+        <View style={styles.aboutFooter}>
+          <View style={styles.aboutRow}>
+            <Text style={styles.aboutVersion}>
+              {APP_CONSTANTS.APP_NAME} • v{Constants.expoConfig?.version ?? '1.0.0'}
+            </Text>
+            <DemoBadge />
+          </View>
+          {APP_CONSTANTS.IS_DEMO && (
+            <Text style={styles.aboutNote}>
+              Prototype build using sample catalog & order data
+            </Text>
+          )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -340,5 +358,28 @@ const styles = StyleSheet.create({
     color: '#DC2626',
     fontWeight: '700',
     fontSize: Typography.body.fontSize,
+  },
+  aboutFooter: {
+    marginTop: Spacing.xl,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    alignItems: 'center',
+    gap: 6,
+  },
+  aboutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  aboutVersion: {
+    fontSize: Typography.caption.fontSize,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  aboutNote: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    textAlign: 'center',
   },
 });

@@ -3,6 +3,8 @@
  */
 export const APP_CONSTANTS = {
   APP_NAME: 'Balaji Fresh',
+  IS_DEMO: true,
+  DEMO_LABEL: 'DEMO VERSION',
   CURRENCY_SYMBOL: '₹',
   DEFAULT_COUNTRY_CODE: '+91',
   FREE_DELIVERY_THRESHOLD: 249,

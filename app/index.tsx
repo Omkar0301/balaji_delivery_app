@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { router, useRootNavigationState } from 'expo-router';
 import { View, StyleSheet, Text, Image, Animated } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../src/theme/colors';
 import { useAuthContext } from '../src/context/AuthContext';
 import { Typography } from '../src/theme/typography';
@@ -8,9 +9,11 @@ import { Spacing } from '../src/theme/spacing';
 import { Radius } from '../src/theme/radius';
 import { Motion } from '../src/theme/motion';
 import { AppLottie } from '../src/components/common/AppLottie';
+import { DemoBadge } from '../src/components/common/DemoBadge';
 import { LottieAssets } from '../src/assets/lottie';
 
 export default function EntryScreen() {
+  const insets = useSafeAreaInsets();
   const { isLoggedIn } = useAuthContext();
   const rootNavigationState = useRootNavigationState();
 
@@ -70,6 +73,9 @@ export default function EntryScreen() {
         <Text style={styles.brandSubtitle}>Direct Farm & Vendor • Fresh to Doorstep</Text>
       </Animated.View>
       <AppLottie source={LottieAssets.freshLoader} size={44} autoPlay loop style={styles.loader} />
+      <View style={[styles.demoFooter, { bottom: Math.max(insets.bottom, Spacing.lg) + Spacing.md }]}>
+        <DemoBadge />
+      </View>
     </View>
   );
 }
@@ -112,5 +118,11 @@ const styles = StyleSheet.create({
   },
   loader: {
     marginTop: Spacing.xl,
+  },
+  demoFooter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
   },
 });

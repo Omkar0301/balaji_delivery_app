@@ -5,3 +5,4 @@ export { ProductCard } from './ProductCard';
 export { CategoryCard } from './CategoryCard';
 export { BillSummaryCard } from './BillSummaryCard';
 export { EmptyState } from './EmptyState';
+export { DemoBadge } from './DemoBadge';
